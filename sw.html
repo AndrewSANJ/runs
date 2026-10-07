@@ -1,0 +1,852 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Утренние пробежки</title>
+
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#14181f">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Пробежки">
+
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #14181f; }
+  body {
+    padding: 20px 12px calc(60px + env(safe-area-inset-bottom));
+    padding-top: calc(20px + env(safe-area-inset-top));
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    background: #14181f; color: #e5e9ef;
+    -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .wrap { max-width: 720px; margin: 0 auto; }
+  .head {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px; margin-bottom: 12px; flex-wrap: wrap;
+  }
+  h1 { font-size: 17px; margin: 0; letter-spacing: -.2px; }
+  .head-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+  .head-actions .btn { font-size: 12px; padding: 4px 10px; }
+  .status { font-size: 11px; color: #6b7280; margin-left: 4px; min-height: 14px; }
+
+  .row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 10px; margin-bottom: 4px;
+    border-radius: 6px; border-left: 4px solid transparent;
+    font-size: 14px; line-height: 1.2;
+    cursor: pointer; user-select: none;
+    transition: box-shadow .12s ease, background .12s ease;
+  }
+  .row:hover { box-shadow: 0 2px 10px rgba(0,0,0,.4); }
+  .row:focus-visible { outline: 2px solid #4a8bff; outline-offset: 1px; }
+  .row.yellow { background: #3b3416; border-left-color: #d4a900; }
+  .row.green  { background: #163a22; border-left-color: #35b85a; }
+  .row.red    { background: #3d1c1c; border-left-color: #e05555; }
+  .row.editing {
+    background: #232a34; border-left-color: #64748b;
+    cursor: default; padding: 6px 8px;
+    box-shadow: 0 3px 14px rgba(0,0,0,.5);
+  }
+
+  .date { flex: 0 0 132px; font-weight: 600; color: #c7cfda; white-space: nowrap; }
+  .date.today { color: #6ea8ff; }
+  .dist {
+    flex: 0 0 84px; text-align: right; font-weight: 600;
+    font-variant-numeric: tabular-nums; white-space: nowrap;
+  }
+  .dist.empty { color: #5f6875; font-weight: 400; }
+  .note {
+    flex: 1 1 auto; color: #b6bec9;
+    overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; min-width: 0;
+  }
+  .note.empty { color: transparent; }
+  .week-divider { height: 1px; background: #3a4250; margin: 10px 4px; }
+
+  .inp {
+    font: inherit; font-size: 14px; padding: 6px 8px;
+    border: 1px solid #3a4250; border-radius: 5px;
+    background: #1a1f27; color: #e5e9ef; min-width: 0;
+  }
+  .inp:focus {
+    outline: none; border-color: #4a8bff;
+    box-shadow: 0 0 0 2px rgba(74,139,255,.25);
+  }
+  .inp.invalid { border-color: #e05555; box-shadow: 0 0 0 2px rgba(224,85,85,.25); }
+  .inp.dist-inp { flex: 0 0 84px; text-align: right; }
+  .inp.note-inp { flex: 1 1 auto; }
+
+  /* кнопка-триггер для модалки заметки */
+  .note-trigger {
+    cursor: pointer;
+    display: flex; align-items: center;
+    padding: 6px 8px;
+    border: 1px solid #3a4250; border-radius: 5px;
+    background: #1a1f27;
+    color: #c7cfda;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    user-select: none;
+  }
+  .note-trigger:hover { background: #232a34; }
+  .note-trigger.empty { color: #5f6875; font-style: italic; }
+  .note-trigger:focus-visible { outline: 2px solid #4a8bff; outline-offset: 1px; }
+
+  .btn {
+    font: inherit; font-size: 13px; font-weight: 600;
+    padding: 5px 11px; border-radius: 5px;
+    border: 1px solid #3a4250; background: #232a34;
+    color: #c7cfda; cursor: pointer; white-space: nowrap;
+  }
+  .btn:hover { background: #2b3340; }
+  .btn.primary { background: #2f6fdd; border-color: #2f6fdd; color: #fff; }
+  .btn.primary:hover { background: #3b7ce6; }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+
+  /* ---------- модальное окно для заметки ---------- */
+  .modal-backdrop {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,.65);
+    display: flex; align-items: center; justify-content: center;
+    padding: 16px;
+    z-index: 1000;
+    animation: fadeIn .12s ease;
+  }
+  .modal-backdrop.hidden { display: none; }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+  .modal {
+    background: #1f2530;
+    border: 1px solid #3a4250;
+    border-radius: 12px;
+    padding: 18px;
+    max-width: 640px;
+    width: 100%;
+    max-height: 90vh;
+    display: flex; flex-direction: column;
+    gap: 12px;
+    box-shadow: 0 20px 60px rgba(0,0,0,.6);
+  }
+  .modal-title { font-size: 16px; font-weight: 600; color: #e5e9ef; }
+  .modal-title small { font-weight: 400; color: #8a94a3; margin-left: 6px; font-size: 13px; }
+  .modal-textarea {
+    font: inherit; font-size: 16px; line-height: 1.4;
+    padding: 12px;
+    border: 1px solid #3a4250; border-radius: 8px;
+    background: #14181f; color: #e5e9ef;
+    min-height: 260px;
+    width: 100%;
+    resize: vertical;
+  }
+  .modal-textarea:focus { outline: none; border-color: #4a8bff; box-shadow: 0 0 0 2px rgba(74,139,255,.25); }
+  .modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
+
+  /* ---------- мобильная версия: всё крупнее ---------- */
+  @media (max-width: 640px) {
+    body {
+      padding: 16px 10px calc(60px + env(safe-area-inset-bottom));
+      padding-top: calc(16px + env(safe-area-inset-top));
+    }
+    h1 { font-size: 20px; }
+    .head { gap: 10px; }
+    .head-actions { gap: 8px; }
+    .head-actions .btn { font-size: 14px; padding: 8px 12px; }
+    .status { font-size: 13px; min-height: 16px; }
+
+    .row { padding: 12px 12px; gap: 10px; font-size: 16px; margin-bottom: 6px; }
+    .date { flex: 0 0 140px; font-size: 15px; }
+    .dist { flex: 0 0 90px; font-size: 16px; }
+    .note { font-size: 15px; }
+    .week-divider { margin: 14px 4px; }
+
+    .inp { font-size: 16px; padding: 10px 12px; }
+    .inp.dist-inp { flex: 0 0 90px; }
+    .note-trigger { padding: 10px 12px; font-size: 15px; }
+
+    .btn { font-size: 15px; padding: 8px 14px; }
+    .modal { padding: 16px; gap: 14px; }
+    .modal-title { font-size: 17px; }
+    .modal-textarea { font-size: 17px; min-height: 45vh; padding: 14px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="head">
+    <h1>Утренние пробежки</h1>
+    <div class="head-actions">
+      <button class="btn" id="loginBtn" type="button">Войти</button>
+      <button class="btn" id="syncBtn" type="button" disabled>Синх.</button>
+      <button class="btn" id="logoutBtn" type="button" disabled>Выйти</button>
+      <button class="btn" id="exportBtn" type="button">Экспорт</button>
+      <button class="btn" id="importBtn" type="button">Импорт</button>
+      <input type="file" id="importFile" accept="application/json,.json" hidden>
+    </div>
+  </div>
+  <div id="status" class="status"></div>
+  <div id="list"></div>
+</div>
+
+<!-- модальное окно для заметки -->
+<div id="noteModal" class="modal-backdrop hidden">
+  <div class="modal">
+    <div class="modal-title">Примечание <small id="noteModalDate"></small></div>
+    <textarea id="noteModalTextarea" class="modal-textarea"
+              placeholder="Самочувствие, погода, маршрут…"></textarea>
+    <div class="modal-actions">
+      <button class="btn" id="noteModalCancel" type="button">Отмена</button>
+      <button class="btn primary" id="noteModalSave" type="button">Сохранить</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script>
+(function () {
+  'use strict';
+
+  /* ============================================================
+     ЗАМЕНИТЕ НА ВАШ CLIENT ID
+     ============================================================ */
+  const CLIENT_ID = '1044087401199-q5etiqllca476ndjbfkg8n5qds6bp2a1.apps.googleusercontent.com';
+
+  const SCOPES = 'https://www.googleapis.com/auth/drive.appdata';
+  const REMOTE_FILE_NAME = 'morning-runs.json';
+  const STORE_KEY = 'morning-runs-v2';
+  const START_DATE = { y: 2026, m: 9, d: 3 };
+
+  const listEl = document.getElementById('list');
+  const statusEl = document.getElementById('status');
+  const loginBtn = document.getElementById('loginBtn');
+  const syncBtn = document.getElementById('syncBtn');
+  const logoutBtn = document.getElementById('logoutBtn');
+  const exportBtn = document.getElementById('exportBtn');
+  const importBtn = document.getElementById('importBtn');
+  const importFile = document.getElementById('importFile');
+
+  const noteModal = document.getElementById('noteModal');
+  const noteModalDate = document.getElementById('noteModalDate');
+  const noteModalTextarea = document.getElementById('noteModalTextarea');
+  const noteModalSave = document.getElementById('noteModalSave');
+  const noteModalCancel = document.getElementById('noteModalCancel');
+
+  let data = loadData();
+  let activeEditor = null;
+  let scrollOnNextRender = true;
+
+  let tokenClient = null;
+  let accessToken = null;
+  let remoteFileId = null;
+  let tokenExpiresAt = 0;
+  let oneTapShown = false;
+
+  /* ---------- утилиты ---------- */
+
+  function keyOf(date) {
+    const p = n => String(n).padStart(2, '0');
+    return date.getFullYear() + '-' + p(date.getMonth() + 1) + '-' + p(date.getDate());
+  }
+  function todayKey() { return keyOf(new Date()); }
+  function parseDateKey(key) {
+    const [y, m, d] = key.split('-').map(Number);
+    return new Date(y, m - 1, d);
+  }
+  function loadData() {
+    try {
+      const p = JSON.parse(localStorage.getItem(STORE_KEY) || '{}');
+      return (p && typeof p === 'object' && !Array.isArray(p)) ? p : {};
+    } catch (e) { return {}; }
+  }
+  function saveData() {
+    try { localStorage.setItem(STORE_KEY, JSON.stringify(data)); } catch (e) {}
+  }
+  function formatDate(key) {
+    const d = parseDateKey(key);
+    const p = n => String(n).padStart(2, '0');
+    const wd = ['вс','пн','вт','ср','чт','пт','сб'][d.getDay()];
+    return p(d.getDate()) + '.' + p(d.getMonth() + 1) + '.' + d.getFullYear() + ' ' + wd;
+  }
+  function parseMeters(raw) {
+    const digits = String(raw).replace(/\D/g, '');
+    return digits === '' ? '' : String(parseInt(digits, 10));
+  }
+  function statusOf(rec) {
+    const m = parseInt(String(rec.distance || '').replace(/\D/g, ''), 10);
+    if (!isNaN(m) && m > 0) return 'green';
+    if (String(rec.note || '').trim() !== '') return 'red';
+    return 'yellow';
+  }
+  function setStatus(msg, isError) {
+    statusEl.textContent = msg || '';
+    statusEl.style.color = isError ? '#e05555' : '#6b7280';
+  }
+
+  /* ---------- наполнение днями ---------- */
+
+  function seedDates() {
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const start = new Date(START_DATE.y, START_DATE.m, START_DATE.d);
+    let added = false;
+    for (let d = new Date(start); d <= today; d.setDate(d.getDate() + 1)) {
+      const k = keyOf(d);
+      if (!data[k]) { data[k] = { distance: '', note: '', updatedAt: 0 }; added = true; }
+    }
+    if (added) saveData();
+  }
+
+  /* ---------- отрисовка ---------- */
+
+  function render() {
+    listEl.innerHTML = '';
+    const keys = Object.keys(data).sort();
+    let prevDate = null;
+
+    keys.forEach(key => {
+      const d = parseDateKey(key);
+      if (prevDate && prevDate.getDay() === 0 && d.getDay() === 1) {
+        const div = document.createElement('div');
+        div.className = 'week-divider';
+        listEl.appendChild(div);
+      }
+      listEl.appendChild(buildRow(key, data[key]));
+      prevDate = d;
+    });
+
+    if (scrollOnNextRender) {
+      scrollOnNextRender = false;
+      requestAnimationFrame(() => {
+        const last = listEl.lastElementChild;
+        if (last && last.scrollIntoView) last.scrollIntoView({ block: 'nearest' });
+      });
+    }
+  }
+
+  function buildRow(key, rec) {
+    const row = document.createElement('div');
+    row.className = 'row ' + statusOf(rec);
+    row.tabIndex = 0;
+    row.dataset.key = key;
+
+    const date = document.createElement('span');
+    date.className = 'date' + (key === todayKey() ? ' today' : '');
+    date.textContent = formatDate(key);
+
+    const dist = document.createElement('span');
+    const m = parseMeters(rec.distance);
+    if (m && m !== '0') { dist.className = 'dist'; dist.textContent = m + ' м'; }
+    else { dist.className = 'dist empty'; dist.textContent = '—'; }
+
+    const note = document.createElement('span');
+    const noteText = String(rec.note || '').trim();
+    note.className = 'note' + (noteText ? '' : ' empty');
+    note.textContent = noteText || '·';
+
+    row.append(date, dist, note);
+
+    row.addEventListener('click', () => onRowActivate(row, key));
+    row.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onRowActivate(row, key); }
+    });
+
+    return row;
+  }
+
+  function onRowActivate(row, key) {
+    if (row.classList.contains('editing')) return;
+    if (activeEditor) {
+      const ok = activeEditor.commit();
+      if (!ok) return;
+      const fresh = listEl.querySelector('.row[data-key="' + key + '"]');
+      if (fresh) startEdit(fresh, key);
+      return;
+    }
+    startEdit(row, key);
+  }
+
+  /* ---------- модальное окно заметки ---------- */
+
+  function openNoteModal(dateLabel, initialText, onSave) {
+    noteModalDate.textContent = dateLabel ? '· ' + dateLabel : '';
+    noteModalTextarea.value = initialText || '';
+    noteModal.classList.remove('hidden');
+    setTimeout(() => {
+      noteModalTextarea.focus();
+      // Ставим курсор в конец текста
+      noteModalTextarea.setSelectionRange(noteModalTextarea.value.length, noteModalTextarea.value.length);
+    }, 30);
+
+    function close() {
+      noteModal.classList.add('hidden');
+      noteModalSave.removeEventListener('click', onSaveClick);
+      noteModalCancel.removeEventListener('click', onCancelClick);
+      noteModalTextarea.removeEventListener('keydown', onKeyDown);
+      noteModal.removeEventListener('click', onBackdropClick);
+    }
+    function onSaveClick() {
+      onSave(noteModalTextarea.value.trim());
+      close();
+    }
+    function onCancelClick() { close(); }
+    function onKeyDown(e) {
+      if (e.key === 'Escape') { e.preventDefault(); onCancelClick(); }
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); onSaveClick(); }
+    }
+    function onBackdropClick(e) {
+      if (e.target === noteModal) onCancelClick();
+    }
+    noteModalSave.addEventListener('click', onSaveClick);
+    noteModalCancel.addEventListener('click', onCancelClick);
+    noteModalTextarea.addEventListener('keydown', onKeyDown);
+    noteModal.addEventListener('click', onBackdropClick);
+  }
+
+  /* ---------- редактирование строки ---------- */
+
+  function startEdit(row, key) {
+    if (row.classList.contains('editing')) return;
+    const rec = data[key] || { distance: '', note: '', updatedAt: 0 };
+    row.classList.add('editing');
+    row.innerHTML = '';
+
+    const date = document.createElement('span');
+    date.className = 'date' + (key === todayKey() ? ' today' : '');
+    date.textContent = formatDate(key);
+
+    const distInput = document.createElement('input');
+    distInput.className = 'inp dist-inp';
+    distInput.type = 'text'; distInput.inputMode = 'numeric';
+    distInput.value = rec.distance || '';
+
+    // Поле заметки — кнопка, открывающая модалку
+    const noteTrigger = document.createElement('div');
+    noteTrigger.className = 'inp note-inp note-trigger';
+    noteTrigger.tabIndex = 0;
+    noteTrigger.setAttribute('role', 'button');
+    let noteValue = String(rec.note || '');
+    function updateNoteTrigger() {
+      const t = noteValue.trim();
+      noteTrigger.textContent = t || 'Примечание…';
+      noteTrigger.classList.toggle('empty', !t);
+    }
+    updateNoteTrigger();
+
+    function openNote() {
+      openNoteModal(formatDate(key), noteValue, txt => {
+        noteValue = txt;
+        updateNoteTrigger();
+      });
+    }
+    noteTrigger.addEventListener('click', e => { e.stopPropagation(); openNote(); });
+    noteTrigger.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); openNote(); }
+    });
+
+    const saveBtn = document.createElement('button');
+    saveBtn.type = 'button'; saveBtn.className = 'btn primary'; saveBtn.textContent = 'OK';
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button'; cancelBtn.className = 'btn'; cancelBtn.textContent = '×';
+
+    row.append(date, distInput, noteTrigger, saveBtn, cancelBtn);
+    distInput.focus(); distInput.select();
+
+    function commit() {
+      const raw = distInput.value.trim();
+      if (raw !== '' && !/^\d+$/.test(raw)) {
+        distInput.classList.add('invalid'); distInput.focus(); return false;
+      }
+      data[key] = {
+        distance: parseMeters(raw),
+        note: noteValue.trim(),
+        updatedAt: Date.now()
+      };
+      activeEditor = null;
+      saveData();
+      if (accessToken) syncToDrive(true);
+      render();
+      return true;
+    }
+    function cancel() { activeEditor = null; render(); }
+
+    activeEditor = { row, commit, cancel };
+
+    saveBtn.addEventListener('click', e => { e.stopPropagation(); commit(); });
+    cancelBtn.addEventListener('click', e => { e.stopPropagation(); cancel(); });
+
+    distInput.addEventListener('click', e => e.stopPropagation());
+    distInput.addEventListener('keydown', e => {
+      e.stopPropagation();
+      if (e.key === 'Enter')  { e.preventDefault(); commit(); }
+      if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+    });
+    distInput.addEventListener('input', () => distInput.classList.remove('invalid'));
+  }
+
+  /* ============================================================
+     Слияние данных
+     ============================================================ */
+
+  function pickBetter(local, remote) {
+    const lT = Number(local.updatedAt) || 0;
+    const rT = Number(remote.updatedAt) || 0;
+
+    // 1. Если у обеих есть метка времени — побеждает более свежая
+    if (lT > 0 && rT > 0) {
+      const winner = lT >= rT ? local : remote;
+      return {
+        distance: String(winner.distance || '').replace(/\D/g, ''),
+        note: String(winner.note || '').trim(),
+        updatedAt: Math.max(lT, rT)
+      };
+    }
+    // 2. Если метка есть только у одной — её и берём
+    if (lT > 0) {
+      return {
+        distance: String(local.distance || '').replace(/\D/g, ''),
+        note: String(local.note || '').trim(),
+        updatedAt: lT
+      };
+    }
+    if (rT > 0) {
+      return {
+        distance: String(remote.distance || '').replace(/\D/g, ''),
+        note: String(remote.note || '').trim(),
+        updatedAt: rT
+      };
+    }
+
+    // 3. Обе без меток (старые записи) — эвристика
+    const lHas = String(local.distance || '').replace(/\D/g, '') !== '' || String(local.note || '').trim() !== '';
+    const rHas = String(remote.distance || '').replace(/\D/g, '') !== '' || String(remote.note || '').trim() !== '';
+
+    if (rHas && !lHas) {
+      return {
+        distance: String(remote.distance || '').replace(/\D/g, ''),
+        note: String(remote.note || '').trim(),
+        updatedAt: Date.now()
+      };
+    }
+    if (lHas && !rHas) {
+      return {
+        distance: String(local.distance || '').replace(/\D/g, ''),
+        note: String(local.note || '').trim(),
+        updatedAt: Date.now()
+      };
+    }
+    if (rHas) {
+      return {
+        distance: String(remote.distance || '').replace(/\D/g, ''),
+        note: String(remote.note || '').trim(),
+        updatedAt: Date.now()
+      };
+    }
+    return { distance: '', note: '', updatedAt: 0 };
+  }
+
+  /* ============================================================
+     GOOGLE DRIVE
+     ============================================================ */
+
+  function initTokenClient() {
+    if (tokenClient) return;
+    if (!window.google || !google.accounts || !google.accounts.oauth2) return;
+
+    tokenClient = google.accounts.oauth2.initTokenClient({
+      client_id: CLIENT_ID,
+      scope: SCOPES,
+      auto_select: true,
+      callback: handleTokenResponse
+    });
+  }
+
+  function handleTokenResponse(resp) {
+    if (resp.error) {
+      if (resp.error === 'interaction_required' || resp.error === 'login_required') {
+        if (!oneTapShown) {
+          oneTapShown = true;
+          setStatus('Выберите аккаунт Google…');
+          try { tokenClient.requestAccessToken(); }
+          catch (e) { setStatus('Нажмите «Войти» для подключения.'); }
+        } else {
+          setStatus('Нажмите «Войти» для подключения.');
+        }
+        return;
+      }
+      if (resp.error === 'access_denied') { setStatus('Доступ отклонён.', true); return; }
+      if (resp.error === 'popup_closed_by_user') { setStatus('Окно входа закрыто.'); return; }
+      if (resp.error === 'origin_mismatch') {
+        setStatus('origin_mismatch: добавьте ' + window.location.origin + ' в Authorized JavaScript origins.', true);
+        return;
+      }
+      setStatus('Ошибка входа: ' + resp.error, true);
+      console.error('OAuth error:', resp);
+      return;
+    }
+
+    accessToken = resp.access_token;
+    tokenExpiresAt = Date.now() + (resp.expires_in ? resp.expires_in * 1000 : 3600 * 1000);
+    try { localStorage.setItem('oauth_remember', '1'); } catch (e) {}
+
+    setStatus('Вы вошли. Загружаю данные…');
+    loginBtn.disabled = true;
+    syncBtn.disabled = false;
+    logoutBtn.disabled = false;
+    syncFromDrive();
+  }
+
+  window.addEventListener('load', () => {
+    const check = setInterval(() => {
+      if (window.google && google.accounts && google.accounts.oauth2) {
+        initTokenClient();
+        clearInterval(check);
+        if (localStorage.getItem('oauth_remember') === '1') {
+          try { tokenClient.requestAccessToken({ prompt: 'none' }); }
+          catch (e) { console.warn('Silent login failed:', e); }
+        }
+      }
+    }, 200);
+
+    setTimeout(() => {
+      if (!tokenClient) setStatus('Не удалось загрузить Google Identity Services.', true);
+    }, 10000);
+  });
+
+  function ensureToken() {
+    if (!accessToken) return false;
+    if (Date.now() >= tokenExpiresAt - 60000) {
+      setStatus('Сессия истекла. Нажмите «Синх.» ещё раз.', true);
+      accessToken = null;
+      loginBtn.disabled = false;
+      syncBtn.disabled = true;
+      logoutBtn.disabled = true;
+      return false;
+    }
+    return true;
+  }
+
+  // Находит все файлы с нашим именем, берёт самый свежий, остальные удаляет
+  async function findRemoteFile() {
+    const q = encodeURIComponent("name='" + REMOTE_FILE_NAME + "' and 'appDataFolder' in parents and trashed=false");
+    const url = 'https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=' + q +
+                '&fields=files(id,name,modifiedTime)&orderBy=modifiedTime desc';
+    const res = await fetch(url, {
+      headers: { Authorization: 'Bearer ' + accessToken },
+      cache: 'no-store'
+    });
+    if (!res.ok) throw new Error('Ошибка поиска файла: ' + res.status);
+    const json = await res.json();
+    const files = json.files || [];
+
+    if (files.length === 0) return null;
+
+    // Оставляем самый свежий, остальные удаляем
+    const newest = files[0];
+    const stale = files.slice(1);
+    for (const f of stale) {
+      try {
+        await fetch('https://www.googleapis.com/drive/v3/files/' + f.id, {
+          method: 'DELETE',
+          headers: { Authorization: 'Bearer ' + accessToken }
+        });
+        console.log('Удалён дубликат файла на Диске:', f.id, f.modifiedTime);
+      } catch (e) { /* не критично */ }
+    }
+    if (stale.length) console.log('Найдено дубликатов:', stale.length);
+    return newest;
+  }
+
+  async function syncFromDrive() {
+    if (!ensureToken()) return;
+    setStatus('Загрузка с Google Диска…');
+    try {
+      const file = await findRemoteFile();
+      if (!file) {
+        setStatus('Файл на Диске не найден. Создаю…');
+        remoteFileId = null;
+        await syncToDrive(false);
+        return;
+      }
+      remoteFileId = file.id;
+
+      const res = await fetch('https://www.googleapis.com/drive/v3/files/' + file.id + '?alt=media', {
+        headers: { Authorization: 'Bearer ' + accessToken },
+        cache: 'no-store'
+      });
+      if (!res.ok) throw new Error('Ошибка скачивания: ' + res.status);
+      const remote = await res.json();
+
+      // Полное объединение всех ключей
+      const merged = {};
+      const allKeys = new Set([...Object.keys(data), ...Object.keys(remote)]);
+      allKeys.forEach(k => {
+        const local = data[k] || { distance: '', note: '', updatedAt: 0 };
+        const rem = remote[k] || { distance: '', note: '', updatedAt: 0 };
+        merged[k] = pickBetter(local, rem);
+      });
+
+      data = merged;
+      seedDates();
+      saveData();
+      render();
+      setStatus('Данные загружены с Google Диска.');
+      await syncToDrive(true);
+    } catch (e) {
+      setStatus('Ошибка загрузки: ' + e.message, true);
+    }
+  }
+
+  async function syncToDrive(silent) {
+    if (!ensureToken()) return;
+    if (!silent) setStatus('Сохранение на Google Диск…');
+    try {
+      if (!remoteFileId) {
+        const f = await findRemoteFile();
+        if (f) remoteFileId = f.id;
+      }
+      const body = JSON.stringify(data, null, 2);
+
+      if (remoteFileId) {
+        const res = await fetch('https://www.googleapis.com/upload/drive/v3/files/' + remoteFileId + '?uploadType=media', {
+          method: 'PATCH',
+          headers: { Authorization: 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
+          body: body,
+          cache: 'no-store'
+        });
+        if (res.status === 404) {
+          // Файл удалён кем-то — пробуем создать заново
+          remoteFileId = null;
+          return syncToDrive(silent);
+        }
+        if (!res.ok) throw new Error('Ошибка обновления: ' + res.status);
+      } else {
+        const boundary = '-------morning-runs-' + Date.now();
+        const metadata = { name: REMOTE_FILE_NAME, parents: ['appDataFolder'] };
+        const multipart =
+          '--' + boundary + '\r\n' +
+          'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
+          JSON.stringify(metadata) + '\r\n' +
+          '--' + boundary + '\r\n' +
+          'Content-Type: application/json\r\n\r\n' +
+          body + '\r\n' +
+          '--' + boundary + '--';
+
+        const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id', {
+          method: 'POST',
+          headers: {
+            Authorization: 'Bearer ' + accessToken,
+            'Content-Type': 'multipart/related; boundary=' + boundary
+          },
+          body: multipart,
+          cache: 'no-store'
+        });
+        if (!res.ok) throw new Error('Ошибка создания: ' + res.status);
+        const json = await res.json();
+        remoteFileId = json.id;
+      }
+      if (!silent) setStatus('Сохранено на Google Диск.');
+    } catch (e) {
+      setStatus('Ошибка сохранения: ' + e.message, true);
+    }
+  }
+
+  /* ---------- кнопки ---------- */
+
+  loginBtn.addEventListener('click', () => {
+    if (!tokenClient) { setStatus('Google Identity Services ещё не загружен.', true); return; }
+    oneTapShown = false;
+    tokenClient.requestAccessToken();
+  });
+
+  syncBtn.addEventListener('click', () => {
+    if (!accessToken) { tokenClient.requestAccessToken(); return; }
+    syncFromDrive();
+  });
+
+  logoutBtn.addEventListener('click', () => {
+    if (accessToken && window.google && google.accounts && google.accounts.oauth2) {
+      google.accounts.oauth2.revoke(accessToken, () => {});
+    }
+    accessToken = null; remoteFileId = null; tokenExpiresAt = 0; oneTapShown = false;
+    try { localStorage.removeItem('oauth_remember'); } catch (e) {}
+    loginBtn.disabled = false;
+    syncBtn.disabled = true;
+    logoutBtn.disabled = true;
+    setStatus('Вы вышли. Данные остаются в браузере.');
+  });
+
+  exportBtn.addEventListener('click', () => {
+    if (activeEditor) activeEditor.commit();
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const d = new Date(); const p = n => String(n).padStart(2, '0');
+    a.href = url;
+    a.download = 'пробежки-' + d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + '.json';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  });
+
+  importBtn.addEventListener('click', () => importFile.click());
+
+  importFile.addEventListener('change', e => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const parsed = JSON.parse(reader.result);
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Неверный формат');
+        if (!confirm('Заменить текущие данные данными из файла?')) return;
+        const clean = {};
+        Object.keys(parsed).forEach(k => {
+          const r = parsed[k] || {};
+          clean[k] = {
+            distance: parseMeters(r.distance || ''),
+            note: String(r.note || '').trim(),
+            updatedAt: Number(r.updatedAt) || Date.now()
+          };
+        });
+        data = clean; saveData(); seedDates(); render();
+        if (accessToken) syncToDrive(true);
+      } catch (err) {
+        alert('Не удалось прочитать файл: ' + err.message);
+      } finally {
+        importFile.value = '';
+      }
+    };
+    reader.readAsText(file);
+  });
+
+  /* ---------- запуск ---------- */
+
+  seedDates();
+  render();
+
+  let lastKey = todayKey();
+  setInterval(() => {
+    const k = todayKey();
+    if (k !== lastKey) {
+      lastKey = k;
+      seedDates();
+      if (!activeEditor) render();
+    }
+  }, 30000);
+
+  // Регистрация SW с форс-обновлением
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('./sw.js').then(reg => {
+        try { reg.update(); } catch (e) {}
+      }).catch(err => console.warn('SW не зарегистрирован:', err));
+    });
+  }
+})();
+</script>
+</body>
+</html>

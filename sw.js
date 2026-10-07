@@ -1,4 +1,4 @@
-const CACHE = 'runs-v1';
+const CACHE = 'runs-v3';
 const ASSETS = [
   './',
   './index.html',
@@ -26,7 +26,7 @@ self.addEventListener('activate', e => {
 self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
 
-  // Google API и GSI-скрипт — всегда из сети, не из кеша
+  // Запросы к Google — всегда в сеть
   if (
     url.hostname.includes('googleapis.com') ||
     url.hostname.includes('google.com') ||
@@ -35,12 +35,10 @@ self.addEventListener('fetch', e => {
     return;
   }
 
-  // Только GET
   if (e.request.method !== 'GET') return;
 
   e.respondWith(
     caches.match(e.request).then(cached => {
-      // отдаём из кеша, но параллельно обновляем
       const fetchPromise = fetch(e.request).then(resp => {
         if (resp && resp.ok) {
           const copy = resp.clone();
