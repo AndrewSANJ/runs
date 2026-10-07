@@ -81,7 +81,6 @@
   .inp.dist-inp { flex: 0 0 84px; text-align: right; }
   .inp.note-inp { flex: 1 1 auto; }
 
-  /* кнопка-триггер для модалки заметки */
   .note-trigger {
     cursor: pointer;
     display: flex; align-items: center;
@@ -103,13 +102,23 @@
     padding: 5px 11px; border-radius: 5px;
     border: 1px solid #3a4250; background: #232a34;
     color: #c7cfda; cursor: pointer; white-space: nowrap;
+    transition: background .12s ease, box-shadow .3s ease;
   }
   .btn:hover { background: #2b3340; }
   .btn.primary { background: #2f6fdd; border-color: #2f6fdd; color: #fff; }
   .btn.primary:hover { background: #3b7ce6; }
   .btn:disabled { opacity: .5; cursor: not-allowed; }
+  .btn.attention {
+    animation: pulse 1.6s ease-in-out infinite;
+    background: #2f6fdd;
+    border-color: #2f6fdd;
+    color: #fff;
+  }
+  @keyframes pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(47,111,221,.7); }
+    50% { box-shadow: 0 0 0 8px rgba(47,111,221,0); }
+  }
 
-  /* ---------- модальное окно для заметки ---------- */
   .modal-backdrop {
     position: fixed; inset: 0;
     background: rgba(0,0,0,.65);
@@ -147,7 +156,6 @@
   .modal-textarea:focus { outline: none; border-color: #4a8bff; box-shadow: 0 0 0 2px rgba(74,139,255,.25); }
   .modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
 
-  /* ---------- мобильная версия: всё крупнее ---------- */
   @media (max-width: 640px) {
     body {
       padding: 16px 10px calc(60px + env(safe-area-inset-bottom));
@@ -193,7 +201,6 @@
   <div id="list"></div>
 </div>
 
-<!-- модальное окно для заметки -->
 <div id="noteModal" class="modal-backdrop hidden">
   <div class="modal">
     <div class="modal-title">Примечание <small id="noteModalDate"></small></div>
@@ -244,7 +251,6 @@
   let accessToken = null;
   let remoteFileId = null;
   let tokenExpiresAt = 0;
-  let oneTapShown = false;
 
   /* ---------- утилиты ---------- */
 
@@ -286,8 +292,6 @@
     statusEl.textContent = msg || '';
     statusEl.style.color = isError ? '#e05555' : '#6b7280';
   }
-
-  /* ---------- наполнение днями ---------- */
 
   function seedDates() {
     const today = new Date(); today.setHours(0, 0, 0, 0);
@@ -377,7 +381,6 @@
     noteModal.classList.remove('hidden');
     setTimeout(() => {
       noteModalTextarea.focus();
-      // Ставим курсор в конец текста
       noteModalTextarea.setSelectionRange(noteModalTextarea.value.length, noteModalTextarea.value.length);
     }, 30);
 
@@ -388,18 +391,14 @@
       noteModalTextarea.removeEventListener('keydown', onKeyDown);
       noteModal.removeEventListener('click', onBackdropClick);
     }
-    function onSaveClick() {
-      onSave(noteModalTextarea.value.trim());
-      close();
-    }
+    function onSaveClick() { onSave(noteModalTextarea.value.trim()); close(); }
     function onCancelClick() { close(); }
     function onKeyDown(e) {
       if (e.key === 'Escape') { e.preventDefault(); onCancelClick(); }
       if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); onSaveClick(); }
     }
-    function onBackdropClick(e) {
-      if (e.target === noteModal) onCancelClick();
-    }
+    function onBackdropClick(e) { if (e.target === noteModal) onCancelClick(); }
+
     noteModalSave.addEventListener('click', onSaveClick);
     noteModalCancel.addEventListener('click', onCancelClick);
     noteModalTextarea.addEventListener('keydown', onKeyDown);
@@ -423,7 +422,6 @@
     distInput.type = 'text'; distInput.inputMode = 'numeric';
     distInput.value = rec.distance || '';
 
-    // Поле заметки — кнопка, открывающая модалку
     const noteTrigger = document.createElement('div');
     noteTrigger.className = 'inp note-inp note-trigger';
     noteTrigger.tabIndex = 0;
@@ -496,7 +494,6 @@
     const lT = Number(local.updatedAt) || 0;
     const rT = Number(remote.updatedAt) || 0;
 
-    // 1. Если у обеих есть метка времени — побеждает более свежая
     if (lT > 0 && rT > 0) {
       const winner = lT >= rT ? local : remote;
       return {
@@ -505,7 +502,6 @@
         updatedAt: Math.max(lT, rT)
       };
     }
-    // 2. Если метка есть только у одной — её и берём
     if (lT > 0) {
       return {
         distance: String(local.distance || '').replace(/\D/g, ''),
@@ -521,7 +517,6 @@
       };
     }
 
-    // 3. Обе без меток (старые записи) — эвристика
     const lHas = String(local.distance || '').replace(/\D/g, '') !== '' || String(local.note || '').trim() !== '';
     const rHas = String(remote.distance || '').replace(/\D/g, '') !== '' || String(remote.note || '').trim() !== '';
 
@@ -568,14 +563,8 @@
   function handleTokenResponse(resp) {
     if (resp.error) {
       if (resp.error === 'interaction_required' || resp.error === 'login_required') {
-        if (!oneTapShown) {
-          oneTapShown = true;
-          setStatus('Выберите аккаунт Google…');
-          try { tokenClient.requestAccessToken(); }
-          catch (e) { setStatus('Нажмите «Войти» для подключения.'); }
-        } else {
-          setStatus('Нажмите «Войти» для подключения.');
-        }
+        setStatus('Нажмите «Войти» для подключения к Google.');
+        loginBtn.classList.add('attention');
         return;
       }
       if (resp.error === 'access_denied') { setStatus('Доступ отклонён.', true); return; }
@@ -593,6 +582,7 @@
     tokenExpiresAt = Date.now() + (resp.expires_in ? resp.expires_in * 1000 : 3600 * 1000);
     try { localStorage.setItem('oauth_remember', '1'); } catch (e) {}
 
+    loginBtn.classList.remove('attention');
     setStatus('Вы вошли. Загружаю данные…');
     loginBtn.disabled = true;
     syncBtn.disabled = false;
@@ -606,8 +596,9 @@
         initTokenClient();
         clearInterval(check);
         if (localStorage.getItem('oauth_remember') === '1') {
-          try { tokenClient.requestAccessToken({ prompt: 'none' }); }
-          catch (e) { console.warn('Silent login failed:', e); }
+          try {
+            tokenClient.requestAccessToken({ prompt: 'none' });
+          } catch (e) { console.warn('Silent login failed:', e); }
         }
       }
     }, 200);
@@ -620,17 +611,17 @@
   function ensureToken() {
     if (!accessToken) return false;
     if (Date.now() >= tokenExpiresAt - 60000) {
-      setStatus('Сессия истекла. Нажмите «Синх.» ещё раз.', true);
       accessToken = null;
       loginBtn.disabled = false;
       syncBtn.disabled = true;
       logoutBtn.disabled = true;
+      loginBtn.classList.add('attention');
+      setStatus('Сессия истекла. Нажмите «Войти».');
       return false;
     }
     return true;
   }
 
-  // Находит все файлы с нашим именем, берёт самый свежий, остальные удаляет
   async function findRemoteFile() {
     const q = encodeURIComponent("name='" + REMOTE_FILE_NAME + "' and 'appDataFolder' in parents and trashed=false");
     const url = 'https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=' + q +
@@ -645,7 +636,6 @@
 
     if (files.length === 0) return null;
 
-    // Оставляем самый свежий, остальные удаляем
     const newest = files[0];
     const stale = files.slice(1);
     for (const f of stale) {
@@ -654,10 +644,9 @@
           method: 'DELETE',
           headers: { Authorization: 'Bearer ' + accessToken }
         });
-        console.log('Удалён дубликат файла на Диске:', f.id, f.modifiedTime);
-      } catch (e) { /* не критично */ }
+        console.log('Удалён дубликат файла на Диске:', f.id);
+      } catch (e) {}
     }
-    if (stale.length) console.log('Найдено дубликатов:', stale.length);
     return newest;
   }
 
@@ -681,7 +670,6 @@
       if (!res.ok) throw new Error('Ошибка скачивания: ' + res.status);
       const remote = await res.json();
 
-      // Полное объединение всех ключей
       const merged = {};
       const allKeys = new Set([...Object.keys(data), ...Object.keys(remote)]);
       allKeys.forEach(k => {
@@ -719,7 +707,6 @@
           cache: 'no-store'
         });
         if (res.status === 404) {
-          // Файл удалён кем-то — пробуем создать заново
           remoteFileId = null;
           return syncToDrive(silent);
         }
@@ -759,12 +746,25 @@
 
   loginBtn.addEventListener('click', () => {
     if (!tokenClient) { setStatus('Google Identity Services ещё не загружен.', true); return; }
-    oneTapShown = false;
+    loginBtn.classList.remove('attention');
     tokenClient.requestAccessToken();
   });
 
   syncBtn.addEventListener('click', () => {
-    if (!accessToken) { tokenClient.requestAccessToken(); return; }
+    if (!accessToken) {
+      setStatus('Нужно войти в Google. Нажмите «Войти».');
+      loginBtn.classList.add('attention');
+      return;
+    }
+    if (Date.now() >= tokenExpiresAt - 60000) {
+      accessToken = null;
+      loginBtn.disabled = false;
+      syncBtn.disabled = true;
+      logoutBtn.disabled = true;
+      loginBtn.classList.add('attention');
+      setStatus('Сессия истекла. Нажмите «Войти».');
+      return;
+    }
     syncFromDrive();
   });
 
@@ -772,9 +772,10 @@
     if (accessToken && window.google && google.accounts && google.accounts.oauth2) {
       google.accounts.oauth2.revoke(accessToken, () => {});
     }
-    accessToken = null; remoteFileId = null; tokenExpiresAt = 0; oneTapShown = false;
+    accessToken = null; remoteFileId = null; tokenExpiresAt = 0;
     try { localStorage.removeItem('oauth_remember'); } catch (e) {}
     loginBtn.disabled = false;
+    loginBtn.classList.remove('attention');
     syncBtn.disabled = true;
     logoutBtn.disabled = true;
     setStatus('Вы вышли. Данные остаются в браузере.');
@@ -838,7 +839,6 @@
     }
   }, 30000);
 
-  // Регистрация SW с форс-обновлением
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
       navigator.serviceWorker.register('./sw.js').then(reg => {
