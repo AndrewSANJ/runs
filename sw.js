@@ -1,4 +1,4 @@
-const CACHE = 'runs-v4';
+const CACHE = 'runs-v5';
 const ASSETS = [
   './',
   './index.html',

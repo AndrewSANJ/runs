@@ -32,7 +32,7 @@
   h1 { font-size: 17px; margin: 0; letter-spacing: -.2px; }
   .head-actions { display: flex; gap: 6px; flex-wrap: wrap; }
   .head-actions .btn { font-size: 12px; padding: 4px 10px; }
-  .status { font-size: 11px; color: #6b7280; margin-left: 4px; min-height: 14px; }
+  .status { font-size: 11px; color: #6b7280; margin-left: 4px; min-height: 14px; white-space: pre-line; }
 
   .row {
     display: flex; align-items: center; gap: 10px;
@@ -156,6 +156,19 @@
   .modal-textarea:focus { outline: none; border-color: #4a8bff; box-shadow: 0 0 0 2px rgba(74,139,255,.25); }
   .modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
 
+  .diag {
+    font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    white-space: pre-wrap;
+    word-break: break-all;
+    background: #14181f;
+    border: 1px solid #3a4250;
+    border-radius: 8px;
+    padding: 12px;
+    max-height: 50vh;
+    overflow: auto;
+    color: #c7cfda;
+  }
+
   @media (max-width: 640px) {
     body {
       padding: 16px 10px calc(60px + env(safe-area-inset-bottom));
@@ -181,6 +194,7 @@
     .modal { padding: 16px; gap: 14px; }
     .modal-title { font-size: 17px; }
     .modal-textarea { font-size: 17px; min-height: 45vh; padding: 14px; }
+    .diag { font-size: 13px; }
   }
 </style>
 </head>
@@ -191,6 +205,7 @@
     <div class="head-actions">
       <button class="btn" id="loginBtn" type="button">Войти</button>
       <button class="btn" id="syncBtn" type="button" disabled>Синх.</button>
+      <button class="btn" id="diagBtn" type="button">Диагностика</button>
       <button class="btn" id="logoutBtn" type="button" disabled>Выйти</button>
       <button class="btn" id="exportBtn" type="button">Экспорт</button>
       <button class="btn" id="importBtn" type="button">Импорт</button>
@@ -209,6 +224,17 @@
     <div class="modal-actions">
       <button class="btn" id="noteModalCancel" type="button">Отмена</button>
       <button class="btn primary" id="noteModalSave" type="button">Сохранить</button>
+    </div>
+  </div>
+</div>
+
+<div id="diagModal" class="modal-backdrop hidden">
+  <div class="modal">
+    <div class="modal-title">Диагностика синхронизации</div>
+    <div class="diag" id="diagContent">Загрузка…</div>
+    <div class="modal-actions">
+      <button class="btn" id="diagCopy" type="button">Копировать</button>
+      <button class="btn primary" id="diagClose" type="button">Закрыть</button>
     </div>
   </div>
 </div>
@@ -232,6 +258,7 @@
   const statusEl = document.getElementById('status');
   const loginBtn = document.getElementById('loginBtn');
   const syncBtn = document.getElementById('syncBtn');
+  const diagBtn = document.getElementById('diagBtn');
   const logoutBtn = document.getElementById('logoutBtn');
   const exportBtn = document.getElementById('exportBtn');
   const importBtn = document.getElementById('importBtn');
@@ -243,6 +270,11 @@
   const noteModalSave = document.getElementById('noteModalSave');
   const noteModalCancel = document.getElementById('noteModalCancel');
 
+  const diagModal = document.getElementById('diagModal');
+  const diagContent = document.getElementById('diagContent');
+  const diagClose = document.getElementById('diagClose');
+  const diagCopy = document.getElementById('diagCopy');
+
   let data = loadData();
   let activeEditor = null;
   let scrollOnNextRender = true;
@@ -251,6 +283,7 @@
   let accessToken = null;
   let remoteFileId = null;
   let tokenExpiresAt = 0;
+  let accountEmail = '';
 
   /* ---------- утилиты ---------- */
 
@@ -373,7 +406,7 @@
     startEdit(row, key);
   }
 
-  /* ---------- модальное окно заметки ---------- */
+  /* ---------- модалка заметки ---------- */
 
   function openNoteModal(dateLabel, initialText, onSave) {
     noteModalDate.textContent = dateLabel ? '· ' + dateLabel : '';
@@ -494,6 +527,7 @@
     const lT = Number(local.updatedAt) || 0;
     const rT = Number(remote.updatedAt) || 0;
 
+    // Обе с метками — побеждает свежая
     if (lT > 0 && rT > 0) {
       const winner = lT >= rT ? local : remote;
       return {
@@ -502,6 +536,7 @@
         updatedAt: Math.max(lT, rT)
       };
     }
+    // Только у одной есть метка — её и берём
     if (lT > 0) {
       return {
         distance: String(local.distance || '').replace(/\D/g, ''),
@@ -517,31 +552,17 @@
       };
     }
 
-    const lHas = String(local.distance || '').replace(/\D/g, '') !== '' || String(local.note || '').trim() !== '';
-    const rHas = String(remote.distance || '').replace(/\D/g, '') !== '' || String(remote.note || '').trim() !== '';
-
-    if (rHas && !lHas) {
-      return {
-        distance: String(remote.distance || '').replace(/\D/g, ''),
-        note: String(remote.note || '').trim(),
-        updatedAt: Date.now()
-      };
-    }
-    if (lHas && !rHas) {
-      return {
-        distance: String(local.distance || '').replace(/\D/g, ''),
-        note: String(local.note || '').trim(),
-        updatedAt: Date.now()
-      };
-    }
-    if (rHas) {
-      return {
-        distance: String(remote.distance || '').replace(/\D/g, ''),
-        note: String(remote.note || '').trim(),
-        updatedAt: Date.now()
-      };
-    }
-    return { distance: '', note: '', updatedAt: 0 };
+    // Обе без меток — объединяем максимум информации:
+    // берём дистанцию и примечание из тех источников, где они есть
+    const lDist = String(local.distance || '').replace(/\D/g, '');
+    const rDist = String(remote.distance || '').replace(/\D/g, '');
+    const lNote = String(local.note || '').trim();
+    const rNote = String(remote.note || '').trim();
+    return {
+      distance: lDist || rDist,
+      note: lNote || rNote,
+      updatedAt: (lDist || lNote || rDist || rNote) ? Date.now() : 0
+    };
   }
 
   /* ============================================================
@@ -560,7 +581,19 @@
     });
   }
 
-  function handleTokenResponse(resp) {
+  async function fetchAccountEmail() {
+    try {
+      const res = await fetch('https://www.googleapis.com/drive/v3/about?fields=user', {
+        headers: { Authorization: 'Bearer ' + accessToken },
+        cache: 'no-store'
+      });
+      if (!res.ok) return '';
+      const j = await res.json();
+      return (j.user && j.user.emailAddress) || '';
+    } catch (e) { return ''; }
+  }
+
+  async function handleTokenResponse(resp) {
     if (resp.error) {
       if (resp.error === 'interaction_required' || resp.error === 'login_required') {
         setStatus('Нажмите «Войти» для подключения к Google.');
@@ -583,10 +616,12 @@
     try { localStorage.setItem('oauth_remember', '1'); } catch (e) {}
 
     loginBtn.classList.remove('attention');
-    setStatus('Вы вошли. Загружаю данные…');
     loginBtn.disabled = true;
     syncBtn.disabled = false;
     logoutBtn.disabled = false;
+
+    accountEmail = await fetchAccountEmail();
+    setStatus('Вход: ' + (accountEmail || 'аккаунт Google') + '\nЗагружаю данные…');
     syncFromDrive();
   }
 
@@ -596,9 +631,8 @@
         initTokenClient();
         clearInterval(check);
         if (localStorage.getItem('oauth_remember') === '1') {
-          try {
-            tokenClient.requestAccessToken({ prompt: 'none' });
-          } catch (e) { console.warn('Silent login failed:', e); }
+          try { tokenClient.requestAccessToken({ prompt: 'none' }); }
+          catch (e) { console.warn('Silent login failed:', e); }
         }
       }
     }, 200);
@@ -622,67 +656,73 @@
     return true;
   }
 
-  async function findRemoteFile() {
+  async function findAllRemoteFiles() {
     const q = encodeURIComponent("name='" + REMOTE_FILE_NAME + "' and 'appDataFolder' in parents and trashed=false");
     const url = 'https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=' + q +
-                '&fields=files(id,name,modifiedTime)&orderBy=modifiedTime desc';
+                '&fields=files(id,name,modifiedTime,size)&orderBy=modifiedTime desc';
     const res = await fetch(url, {
       headers: { Authorization: 'Bearer ' + accessToken },
       cache: 'no-store'
     });
-    if (!res.ok) throw new Error('Ошибка поиска файла: ' + res.status);
+    if (!res.ok) throw new Error('Ошибка поиска файлов: ' + res.status);
     const json = await res.json();
-    const files = json.files || [];
-
-    if (files.length === 0) return null;
-
-    const newest = files[0];
-    const stale = files.slice(1);
-    for (const f of stale) {
-      try {
-        await fetch('https://www.googleapis.com/drive/v3/files/' + f.id, {
-          method: 'DELETE',
-          headers: { Authorization: 'Bearer ' + accessToken }
-        });
-        console.log('Удалён дубликат файла на Диске:', f.id);
-      } catch (e) {}
-    }
-    return newest;
+    return json.files || [];
   }
 
   async function syncFromDrive() {
     if (!ensureToken()) return;
     setStatus('Загрузка с Google Диска…');
     try {
-      const file = await findRemoteFile();
-      if (!file) {
-        setStatus('Файл на Диске не найден. Создаю…');
-        remoteFileId = null;
-        await syncToDrive(false);
-        return;
+      const files = await findAllRemoteFiles();
+      console.log('Файлов на Диске:', files.length, files.map(f => ({ id: f.id, mt: f.modifiedTime })));
+
+      // Скачиваем и сливаем ВСЕ файлы
+      const merged = { ...data };
+      let totalRemoteEntries = 0;
+      for (const f of files) {
+        try {
+          const res = await fetch('https://www.googleapis.com/drive/v3/files/' + f.id + '?alt=media', {
+            headers: { Authorization: 'Bearer ' + accessToken },
+            cache: 'no-store'
+          });
+          if (!res.ok) continue;
+          const doc = await res.json();
+          const keys = Object.keys(doc || {});
+          totalRemoteEntries += keys.length;
+          keys.forEach(k => {
+            const local = merged[k] || { distance: '', note: '', updatedAt: 0 };
+            const rem = doc[k] || { distance: '', note: '', updatedAt: 0 };
+            merged[k] = pickBetter(local, rem);
+          });
+        } catch (e) { console.warn('Не удалось скачать', f.id, e); }
       }
-      remoteFileId = file.id;
-
-      const res = await fetch('https://www.googleapis.com/drive/v3/files/' + file.id + '?alt=media', {
-        headers: { Authorization: 'Bearer ' + accessToken },
-        cache: 'no-store'
-      });
-      if (!res.ok) throw new Error('Ошибка скачивания: ' + res.status);
-      const remote = await res.json();
-
-      const merged = {};
-      const allKeys = new Set([...Object.keys(data), ...Object.keys(remote)]);
-      allKeys.forEach(k => {
-        const local = data[k] || { distance: '', note: '', updatedAt: 0 };
-        const rem = remote[k] || { distance: '', note: '', updatedAt: 0 };
-        merged[k] = pickBetter(local, rem);
-      });
 
       data = merged;
       seedDates();
       saveData();
       render();
-      setStatus('Данные загружены с Google Диска.');
+
+      // Удаляем лишние файлы, оставляем самый свежий
+      if (files.length > 1) {
+        remoteFileId = files[0].id;
+        for (let i = 1; i < files.length; i++) {
+          try {
+            await fetch('https://www.googleapis.com/drive/v3/files/' + files[i].id, {
+              method: 'DELETE',
+              headers: { Authorization: 'Bearer ' + accessToken }
+            });
+            console.log('Удалён дубликат:', files[i].id);
+          } catch (e) {}
+        }
+        setStatus('Синхронизировано. Было ' + files.length + ' файлов, объединены в 1.');
+      } else if (files.length === 1) {
+        remoteFileId = files[0].id;
+        setStatus('Синхронизировано с Google Диском.');
+      } else {
+        remoteFileId = null;
+        setStatus('Файл не найден. Создаю новый…');
+      }
+
       await syncToDrive(true);
     } catch (e) {
       setStatus('Ошибка загрузки: ' + e.message, true);
@@ -693,10 +733,11 @@
     if (!ensureToken()) return;
     if (!silent) setStatus('Сохранение на Google Диск…');
     try {
-      if (!remoteFileId) {
-        const f = await findRemoteFile();
-        if (f) remoteFileId = f.id;
-      }
+      // Всегда переустанавливаем ID по актуальному поиску
+      const files = await findAllRemoteFiles();
+      if (files.length > 0) remoteFileId = files[0].id;
+      else remoteFileId = null;
+
       const body = JSON.stringify(data, null, 2);
 
       if (remoteFileId) {
@@ -742,6 +783,82 @@
     }
   }
 
+  /* ---------- диагностика ---------- */
+
+  async function showDiagnostics() {
+    diagModal.classList.remove('hidden');
+    diagContent.textContent = 'Собираю данные…';
+
+    const lines = [];
+    lines.push('=== Устройство ===');
+    lines.push('URL: ' + window.location.href);
+    lines.push('Origin: ' + window.location.origin);
+    lines.push('User-Agent: ' + navigator.userAgent);
+    lines.push('');
+
+    lines.push('=== Локальные данные ===');
+    const localKeys = Object.keys(data).filter(k => {
+      const r = data[k];
+      return (r.distance && r.distance !== '') || (r.note && r.note !== '');
+    });
+    lines.push('Всего записей: ' + Object.keys(data).length);
+    lines.push('Заполненных записей: ' + localKeys.length);
+    lines.push('Последние 5 заполненных:');
+    localKeys.sort().slice(-5).reverse().forEach(k => {
+      const r = data[k];
+      lines.push('  ' + k + ' | ' + (r.distance || '—') + ' м | ' + (r.note || '') + ' | upd=' + (r.updatedAt || 0));
+    });
+    lines.push('');
+
+    lines.push('=== Google аккаунт ===');
+    lines.push('Email: ' + (accountEmail || '(не определён)'));
+    lines.push('Токен есть: ' + (accessToken ? 'да' : 'нет'));
+    if (accessToken) {
+      const leftMin = Math.round((tokenExpiresAt - Date.now()) / 60000);
+      lines.push('Токен истекает через: ' + leftMin + ' мин');
+    }
+    lines.push('');
+
+    if (accessToken) {
+      lines.push('=== Файлы на Google Диске (appDataFolder) ===');
+      try {
+        const files = await findAllRemoteFiles();
+        lines.push('Найдено файлов: ' + files.length);
+        files.forEach((f, i) => {
+          lines.push('  [' + i + '] id=' + f.id);
+          lines.push('      modifiedTime=' + f.modifiedTime);
+          lines.push('      size=' + (f.size || '?') + ' байт');
+        });
+        lines.push('');
+        if (files.length > 0) {
+          lines.push('=== Содержимое самого свежего файла (top-5) ===');
+          const res = await fetch('https://www.googleapis.com/drive/v3/files/' + files[0].id + '?alt=media', {
+            headers: { Authorization: 'Bearer ' + accessToken },
+            cache: 'no-store'
+          });
+          if (res.ok) {
+            const doc = await res.json();
+            const keys = Object.keys(doc).filter(k => {
+              const r = doc[k];
+              return (r.distance && r.distance !== '') || (r.note && r.note !== '');
+            });
+            lines.push('Заполненных записей в файле: ' + keys.length);
+            keys.sort().slice(-5).reverse().forEach(k => {
+              const r = doc[k];
+              lines.push('  ' + k + ' | ' + (r.distance || '—') + ' м | ' + (r.note || '') + ' | upd=' + (r.updatedAt || 0));
+            });
+          }
+        }
+      } catch (e) {
+        lines.push('Ошибка: ' + e.message);
+      }
+    } else {
+      lines.push('Файлы на Диске не проверены — нет токена.');
+    }
+
+    diagContent.textContent = lines.join('\n');
+  }
+
   /* ---------- кнопки ---------- */
 
   loginBtn.addEventListener('click', () => {
@@ -768,11 +885,28 @@
     syncFromDrive();
   });
 
+  diagBtn.addEventListener('click', showDiagnostics);
+
+  diagClose.addEventListener('click', () => diagModal.classList.add('hidden'));
+  diagModal.addEventListener('click', e => {
+    if (e.target === diagModal) diagModal.classList.add('hidden');
+  });
+  diagCopy.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(diagContent.textContent);
+      diagCopy.textContent = 'Скопировано';
+      setTimeout(() => { diagCopy.textContent = 'Копировать'; }, 1500);
+    } catch (e) {
+      diagCopy.textContent = 'Не удалось';
+      setTimeout(() => { diagCopy.textContent = 'Копировать'; }, 1500);
+    }
+  });
+
   logoutBtn.addEventListener('click', () => {
     if (accessToken && window.google && google.accounts && google.accounts.oauth2) {
       google.accounts.oauth2.revoke(accessToken, () => {});
     }
-    accessToken = null; remoteFileId = null; tokenExpiresAt = 0;
+    accessToken = null; remoteFileId = null; tokenExpiresAt = 0; accountEmail = '';
     try { localStorage.removeItem('oauth_remember'); } catch (e) {}
     loginBtn.disabled = false;
     loginBtn.classList.remove('attention');
